@@ -65,15 +65,28 @@ def process_job(job_id: str) -> None:
     try:
         for index, url in enumerate(record.urls, start=1):
             try:
+                # Add result without filename first to show it's being processed
+                result = UrlResult(url=url, status="success", filename=None)
+                with _lock:
+                    results.append(result)
+                    record.results = results
+                
                 filename = render_url_to_pdf(
                     url=url,
                     output_dir=pdf_dir,
                     index=index,
                     auth_strategy=record.auth_strategy,
                 )
-                results.append(UrlResult(url=url, status="success", filename=filename))
+                
+                # Update result with filename
+                result.filename = filename
+                with _lock:
+                    record.results = results
             except Exception as exc:  # pragma: no cover
-                results.append(UrlResult(url=url, status="failed", error=str(exc)))
+                result = UrlResult(url=url, status="failed", error=str(exc))
+                with _lock:
+                    results.append(result)
+                    record.results = results
 
         successful_files = [result.filename for result in results if result.status == "success" and result.filename]
         if not successful_files:
@@ -91,13 +104,11 @@ def process_job(job_id: str) -> None:
             output_media_type = "application/zip"
 
         with _lock:
-            record.results = results
             record.status = "completed"
             record.output_path = str(output_path)
             record.output_filename = output_filename
             record.output_media_type = output_media_type
     except Exception as exc:  # pragma: no cover
         with _lock:
-            record.results = results
             record.status = "failed"
             record.error = str(exc)
