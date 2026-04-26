@@ -73,7 +73,7 @@
         white-space: pre;
         overflow-wrap: normal;
         overflow-x: auto;
-        margin-left: -2px; /* Compensate for line numbers border */
+        margin-left: -2px;
       }
       textarea:focus {
         outline: none;
@@ -210,6 +210,7 @@
         <div id="cookieOptions">
           <label for="authCookieFile">Cookie File Path</label>
           <input type="text" id="authCookieFile" placeholder="auth_cookies.json">
+          <button id="updateCookiesBtn" style="margin-top: 0.5rem; padding: 0.5rem 1rem; background: #2196f3; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem;">Update Cookies from Current Page</button>
         </div>
         <div id="popupOptions" style="display: none;">
           <label for="authPopupUrl">Popup URL</label>
@@ -274,7 +275,7 @@
       // Show/hide auth options based on selection
       function updateAuthOptions() {
         const authType = document.querySelector('input[name="authType"]:checked').value;
-        if (authType === "cookie") {
+        if (authType === "cookie" || authType === "browser_session") {
           cookieOptions.style.display = "block";
           popupOptions.style.display = "none";
         } else if (authType === "popup") {
@@ -299,6 +300,29 @@
       });
       authCookieFileEl.addEventListener("input", saveState);
       authPopupUrlEl.addEventListener("input", saveState);
+
+      // Update cookies button
+      const updateCookiesBtn = document.getElementById("updateCookiesBtn");
+      updateCookiesBtn.addEventListener("click", () => {
+        const cookieData = JSON.stringify(document.cookie.split(';').map(c => {
+          const [name, value] = c.trim().split('=');
+          return { name: name || '', value: value || '', domain: window.location.hostname, path: '/' };
+        }).filter(c => c.name));
+        
+        const blob = new Blob([cookieData], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'auth_cookies.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Update the cookie file input with the default path
+        authCookieFileEl.value = 'auth_cookies.json';
+        saveState();
+      });
 
       // Load state on page load
       loadState();
@@ -335,7 +359,6 @@
           if (data.results?.length) {
             const completed = data.results.filter(r => r.status === "success" && r.filename).length;
             const total = data.results.length;
-            // Show the last result as processing if it doesn't have a filename yet
             const lastResult = data.results[data.results.length - 1];
             if (lastResult && lastResult.status === "success" && !lastResult.filename) {
               currentProcessingEl.innerHTML = `<strong>Processing:</strong> ${lastResult.url}`;

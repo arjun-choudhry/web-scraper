@@ -30,17 +30,27 @@ def _prepare_page_for_capture(page) -> None:
     page.evaluate(
         """
         async () => {
-          const total = Math.max(
+          let lastHeight = 0;
+          let currentHeight = Math.max(
             document.body ? document.body.scrollHeight : 0,
             document.documentElement ? document.documentElement.scrollHeight : 0
           );
-          let y = 0;
-          while (y < total) {
-            window.scrollTo(0, y);
-            y += 1000;
-            await new Promise((resolve) => setTimeout(resolve, 100));
+          
+          // Keep scrolling until page height stabilizes
+          while (currentHeight > lastHeight) {
+            lastHeight = currentHeight;
+            let y = 0;
+            while (y < currentHeight) {
+              window.scrollTo(0, y);
+              y += 500;
+              await new Promise((resolve) => setTimeout(resolve, 150));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            currentHeight = Math.max(
+              document.body ? document.body.scrollHeight : 0,
+              document.documentElement ? document.documentElement.scrollHeight : 0
+            );
           }
-          window.scrollTo(0, 0);
         }
         """
     )
@@ -59,17 +69,27 @@ def _prepare_page_for_capture(page) -> None:
     page.evaluate(
         """
         async () => {
-          const total = Math.max(
+          let lastHeight = 0;
+          let currentHeight = Math.max(
             document.body ? document.body.scrollHeight : 0,
             document.documentElement ? document.documentElement.scrollHeight : 0
           );
-          let y = 0;
-          while (y < total) {
-            window.scrollTo(0, y);
-            y += 1000;
-            await new Promise((resolve) => setTimeout(resolve, 100));
+          
+          // Keep scrolling until page height stabilizes
+          while (currentHeight > lastHeight) {
+            lastHeight = currentHeight;
+            let y = 0;
+            while (y < currentHeight) {
+              window.scrollTo(0, y);
+              y += 500;
+              await new Promise((resolve) => setTimeout(resolve, 150));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            currentHeight = Math.max(
+              document.body ? document.body.scrollHeight : 0,
+              document.documentElement ? document.documentElement.scrollHeight : 0
+            );
           }
-          window.scrollTo(0, 0);
         }
         """
     )
@@ -161,6 +181,24 @@ def _inject_print_styles(page) -> None:
             position: static !important;
             top: auto !important;
             bottom: auto !important;
+          }
+        }
+        """
+    )
+    
+    # Force full page height to prevent cutoff
+    page.evaluate(
+        """
+        () => {
+          const body = document.body;
+          const html = document.documentElement;
+          if (body) {
+            body.style.minHeight = body.scrollHeight + 'px';
+            body.style.height = 'auto';
+          }
+          if (html) {
+            html.style.minHeight = html.scrollHeight + 'px';
+            html.style.height = 'auto';
           }
         }
         """
@@ -398,7 +436,10 @@ def render_url_to_pdf(
         printable_width_px = 1040
         scale = min(0.92, max(0.60, printable_width_px / max(content_width, 1)))
         
-        page.wait_for_timeout(500)
+        # Scroll to top before generating PDF
+        page.evaluate("() => window.scrollTo(0, 0)")
+        page.wait_for_timeout(300)
+        
         page.pdf(
             path=str(output_path),
             format="A4",
@@ -407,7 +448,7 @@ def render_url_to_pdf(
             print_background=cfg.print_background,
             display_header_footer=False,
             prefer_css_page_size=False,
-            margin={"top": "20mm", "right": "12mm", "bottom": "20mm", "left": "12mm"},
+            margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
         )
         context.close()
         browser.close()
