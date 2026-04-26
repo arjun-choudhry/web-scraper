@@ -12,6 +12,11 @@
       .success { color: #157347; }
       .error { color: #bb2d3b; }
       .result-row { margin: 0.3rem 0; }
+      .auth-section { margin: 1rem 0; padding: 1rem; border: 1px solid #ddd; border-radius: 4px; }
+      .auth-section label { display: block; margin-bottom: 0.5rem; }
+      .auth-section input { width: 100%; padding: 0.4rem; margin-top: 0.25rem; }
+      .auth-options { display: flex; gap: 1rem; margin-bottom: 0.5rem; }
+      .auth-options label { cursor: pointer; }
     </style>
   </head>
   <body>
@@ -21,6 +26,25 @@
     <label for="urls">URLs</label>
     <textarea id="urls" placeholder="https://example.com&#10;https://example.org"></textarea>
     <br />
+
+    <div class="auth-section">
+      <strong>Authentication</strong>
+      <div class="auth-options">
+        <label><input type="radio" name="authType" value="none" checked> None</label>
+        <label><input type="radio" name="authType" value="cookie"> Cookie File</label>
+        <label><input type="radio" name="authType" value="popup"> Popup Auth</label>
+        <label><input type="radio" name="authType" value="browser_session"> Browser Session</label>
+      </div>
+      <div id="cookieOptions">
+        <label for="authCookieFile">Cookie File Path</label>
+        <input type="text" id="authCookieFile" placeholder="auth_cookies.json">
+      </div>
+      <div id="popupOptions" style="display: none;">
+        <label for="authPopupUrl">Popup URL</label>
+        <input type="text" id="authPopupUrl" placeholder="https://example.com/login">
+      </div>
+    </div>
+
     <button id="submitBtn">Convert</button>
 
     <div id="status"></div>
@@ -31,6 +55,67 @@
       const statusEl = document.getElementById("status");
       const resultsEl = document.getElementById("results");
       const urlsEl = document.getElementById("urls");
+      const authTypeRadios = document.querySelectorAll('input[name="authType"]');
+      const cookieOptions = document.getElementById("cookieOptions");
+      const popupOptions = document.getElementById("popupOptions");
+      const authCookieFileEl = document.getElementById("authCookieFile");
+      const authPopupUrlEl = document.getElementById("authPopupUrl");
+
+      // Load saved state from localStorage
+      function loadState() {
+        const savedUrls = localStorage.getItem('urls');
+        const savedAuthType = localStorage.getItem('authType');
+        const savedCookieFile = localStorage.getItem('authCookieFile');
+        const savedPopupUrl = localStorage.getItem('authPopupUrl');
+
+        if (savedUrls) urlsEl.value = savedUrls;
+        if (savedAuthType) {
+          const radio = document.querySelector(`input[name="authType"][value="${savedAuthType}"]`);
+          if (radio) radio.checked = true;
+        }
+        if (savedCookieFile) authCookieFileEl.value = savedCookieFile;
+        if (savedPopupUrl) authPopupUrlEl.value = savedPopupUrl;
+
+        // Show/hide auth options based on saved selection
+        updateAuthOptions();
+      }
+
+      // Save state to localStorage
+      function saveState() {
+        localStorage.setItem('urls', urlsEl.value);
+        localStorage.setItem('authType', document.querySelector('input[name="authType"]:checked').value);
+        localStorage.setItem('authCookieFile', authCookieFileEl.value);
+        localStorage.setItem('authPopupUrl', authPopupUrlEl.value);
+      }
+
+      // Show/hide auth options based on selection
+      function updateAuthOptions() {
+        const authType = document.querySelector('input[name="authType"]:checked').value;
+        if (authType === "cookie") {
+          cookieOptions.style.display = "block";
+          popupOptions.style.display = "none";
+        } else if (authType === "popup") {
+          cookieOptions.style.display = "none";
+          popupOptions.style.display = "block";
+        } else {
+          cookieOptions.style.display = "none";
+          popupOptions.style.display = "none";
+        }
+      }
+
+      authTypeRadios.forEach(radio => {
+        radio.addEventListener("change", () => {
+          updateAuthOptions();
+          saveState();
+        });
+      });
+
+      urlsEl.addEventListener("input", saveState);
+      authCookieFileEl.addEventListener("input", saveState);
+      authPopupUrlEl.addEventListener("input", saveState);
+
+      // Load state on page load
+      loadState();
 
       async function pollJob(jobId) {
         while (true) {
@@ -64,13 +149,26 @@
 
       submitBtn.addEventListener("click", async () => {
         const urlText = urlsEl.value || "";
+        const authType = document.querySelector('input[name="authType"]:checked').value;
+        const authCookieFile = authCookieFileEl.value || null;
+        const authPopupUrl = authPopupUrlEl.value || null;
+
+        // Save current state
+        saveState();
+
         statusEl.textContent = "Submitting job...";
         resultsEl.textContent = "";
 
         const res = await fetch("/api/convert", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ urls: [], url_text: urlText })
+          body: JSON.stringify({
+            urls: [],
+            url_text: urlText,
+            auth_type: authType,
+            auth_cookie_file: authCookieFile,
+            auth_popup_url: authPopupUrl
+          })
         });
 
         if (!res.ok) {

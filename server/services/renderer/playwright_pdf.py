@@ -25,6 +25,8 @@ def _prepare_page_for_capture(page) -> None:
         }
         """
     )
+    
+    # Scroll to bottom multiple times to trigger all lazy loading
     page.evaluate(
         """
         async () => {
@@ -35,14 +37,43 @@ def _prepare_page_for_capture(page) -> None:
           let y = 0;
           while (y < total) {
             window.scrollTo(0, y);
-            y += 800;
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            y += 1000;
+            await new Promise((resolve) => setTimeout(resolve, 100));
           }
           window.scrollTo(0, 0);
         }
         """
     )
-    page.wait_for_load_state("networkidle")
+    
+    # Wait for network to be idle with longer timeout
+    try:
+        page.wait_for_load_state("networkidle", timeout=60000)
+    except Exception:
+        # If networkidle times out, continue anyway
+        pass
+    
+    # Additional wait for any remaining content
+    page.wait_for_timeout(2000)
+    
+    # Scroll to bottom again after initial load to catch any late-loading content
+    page.evaluate(
+        """
+        async () => {
+          const total = Math.max(
+            document.body ? document.body.scrollHeight : 0,
+            document.documentElement ? document.documentElement.scrollHeight : 0
+          );
+          let y = 0;
+          while (y < total) {
+            window.scrollTo(0, y);
+            y += 1000;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          window.scrollTo(0, 0);
+        }
+        """
+    )
+    
     page.evaluate(
         """
         async () => {
@@ -57,6 +88,39 @@ def _prepare_page_for_capture(page) -> None:
         }
         """
     )
+    
+    # Final wait for images to load
+    page.wait_for_timeout(1000)
+    
+    # Force full page height to prevent cutoff
+    page.evaluate(
+        """
+        () => {
+          const body = document.body;
+          const html = document.documentElement;
+          if (body) {
+            body.style.minHeight = body.scrollHeight + 'px';
+            body.style.height = 'auto';
+          }
+          if (html) {
+            html.style.minHeight = html.scrollHeight + 'px';
+            html.style.height = 'auto';
+          }
+        }
+        """
+    )
+    
+    # Inject CSS to handle very long pages
+    page.add_style_tag(
+        content="""
+        @media print {
+          html, body {
+            max-height: none !important;
+            overflow: visible !important;
+          }
+        }
+        """
+    )
 
 
 def _inject_print_styles(page) -> None:
@@ -65,35 +129,39 @@ def _inject_print_styles(page) -> None:
         content="""
         @page {
           size: A4 landscape;
-          margin: 16mm 12mm 16mm 12mm;
+          margin: 0;
         }
-        html, body {
-          height: auto !important;
-          overflow: visible !important;
-        }
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        img, svg, canvas {
-          max-width: 100% !important;
-          height: auto !important;
-        }
-        table, figure, pre, blockquote {
-          break-inside: avoid !important;
-          page-break-inside: avoid !important;
-        }
-        thead { display: table-header-group !important; }
-        tfoot { display: table-footer-group !important; }
-        [style*="position:sticky"],
-        [style*="position: fixed"],
-        .sticky,
-        .fixed,
-        header[style*="position"],
-        footer[style*="position"] {
-          position: static !important;
-          top: auto !important;
-          bottom: auto !important;
+        @media print {
+          html, body {
+            height: auto !important;
+            min-height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          img, svg, canvas {
+            max-width: 100% !important;
+            height: auto !important;
+          }
+          table, figure, pre, blockquote {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          thead { display: table-header-group !important; }
+          tfoot { display: table-footer-group !important; }
+          [style*="position:sticky"],
+          [style*="position: fixed"],
+          .sticky,
+          .fixed,
+          header[style*="position"],
+          footer[style*="position"] {
+            position: static !important;
+            top: auto !important;
+            bottom: auto !important;
+          }
         }
         """
     )
@@ -291,7 +359,15 @@ def render_url_to_pdf(
     output_path = output_dir / filename
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        browser = playwright.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--disable-extensions",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            ],
+        )
         context = create_browser_context(browser)
         page = context.new_page()
         auth.apply(page)
@@ -321,15 +397,17 @@ def render_url_to_pdf(
         landscape = True
         printable_width_px = 1040
         scale = min(0.92, max(0.60, printable_width_px / max(content_width, 1)))
-        page.wait_for_timeout(300)
+        
+        page.wait_for_timeout(500)
         page.pdf(
             path=str(output_path),
-            format=cfg.pdf_format,
+            format="A4",
             landscape=landscape,
             scale=scale,
             print_background=cfg.print_background,
             display_header_footer=False,
             prefer_css_page_size=False,
+            margin={"top": "20mm", "right": "12mm", "bottom": "20mm", "left": "12mm"},
         )
         context.close()
         browser.close()

@@ -6,6 +6,7 @@ import uuid
 
 from server.schemas.convert import JobStatus, UrlResult
 from server.services.archive.zip_builder import build_zip_archive
+from server.services.auth.auth_strategy import AuthStrategy, NoAuthStrategy
 from server.services.renderer.playwright_pdf import render_url_to_pdf
 
 
@@ -23,18 +24,20 @@ class JobRecord:
     output_path: str | None = None
     output_filename: str | None = None
     output_media_type: str | None = None
+    auth_strategy: AuthStrategy | None = None
 
 
 _jobs: dict[str, JobRecord] = {}
 _lock = threading.Lock()
 
 
-def create_job(urls: list[str]) -> JobRecord:
+def create_job(urls: list[str], auth_strategy: AuthStrategy | None = None) -> JobRecord:
     record = JobRecord(
         job_id=uuid.uuid4().hex,
         status="pending",
         urls=urls,
         created_at=datetime.now(timezone.utc),
+        auth_strategy=auth_strategy or NoAuthStrategy(),
     )
     with _lock:
         _jobs[record.job_id] = record
@@ -62,7 +65,12 @@ def process_job(job_id: str) -> None:
     try:
         for index, url in enumerate(record.urls, start=1):
             try:
-                filename = render_url_to_pdf(url=url, output_dir=pdf_dir, index=index)
+                filename = render_url_to_pdf(
+                    url=url,
+                    output_dir=pdf_dir,
+                    index=index,
+                    auth_strategy=record.auth_strategy,
+                )
                 results.append(UrlResult(url=url, status="success", filename=filename))
             except Exception as exc:  # pragma: no cover
                 results.append(UrlResult(url=url, status="failed", error=str(exc)))

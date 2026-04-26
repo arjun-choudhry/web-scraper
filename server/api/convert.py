@@ -1,6 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from server.schemas.convert import ConvertRequest, JobResponse
+from server.services.auth.auth_strategy import (
+    BrowserSessionAuthStrategy,
+    CookieAuthStrategy,
+    PopupAuthStrategy,
+)
 from server.services.convert_job import create_job, get_job, process_job
 from server.validation.url_list import parse_urls, validate_public_urls
 
@@ -15,7 +20,16 @@ def start_conversion(payload: ConvertRequest, background_tasks: BackgroundTasks)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    job = create_job(validated)
+    # Determine auth strategy based on request
+    auth_strategy = None
+    if payload.auth_type == "cookie" and payload.auth_cookie_file:
+        auth_strategy = CookieAuthStrategy(cookie_file=payload.auth_cookie_file)
+    elif payload.auth_type == "popup" and payload.auth_popup_url:
+        auth_strategy = PopupAuthStrategy(auth_url=payload.auth_popup_url)
+    elif payload.auth_type == "browser_session" and payload.auth_cookie_file:
+        auth_strategy = BrowserSessionAuthStrategy(cookie_file=payload.auth_cookie_file)
+
+    job = create_job(validated, auth_strategy=auth_strategy)
     background_tasks.add_task(process_job, job.job_id)
     return JobResponse(job_id=job.job_id, status=job.status)
 

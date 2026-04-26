@@ -12,6 +12,18 @@ class ConvertRequest(BaseModel):
         default=None,
         description="Optional multiline text containing one URL per line",
     )
+    auth_type: Literal["none", "cookie", "popup", "browser_session"] = Field(
+        default="none",
+        description="Authentication type: none, cookie, popup, or browser_session",
+    )
+    auth_cookie_file: str | None = Field(
+        default=None,
+        description="Path to file containing saved cookies for cookie auth",
+    )
+    auth_popup_url: str | None = Field(
+        default=None,
+        description="URL to open in popup for authentication",
+    )
 
 
 class UrlResult(BaseModel):
