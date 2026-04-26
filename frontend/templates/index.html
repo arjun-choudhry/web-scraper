@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web to PDF</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; max-width: 900px; }
+      textarea { width: 100%; min-height: 180px; margin-top: 0.5rem; }
+      button { margin-top: 1rem; padding: 0.6rem 1rem; }
+      .muted { color: #666; }
+      .success { color: #157347; }
+      .error { color: #bb2d3b; }
+      .result-row { margin: 0.3rem 0; }
+    </style>
+  </head>
+  <body>
+    <h1>Webpage to PDF</h1>
+    <p class="muted">Paste one URL per line. One URL returns a PDF, multiple URLs return a ZIP.</p>
+
+    <label for="urls">URLs</label>
+    <textarea id="urls" placeholder="https://example.com&#10;https://example.org"></textarea>
+    <br />
+    <button id="submitBtn">Convert</button>
+
+    <div id="status"></div>
+    <div id="results"></div>
+
+    <script>
+      const submitBtn = document.getElementById("submitBtn");
+      const statusEl = document.getElementById("status");
+      const resultsEl = document.getElementById("results");
+      const urlsEl = document.getElementById("urls");
+
+      async function pollJob(jobId) {
+        while (true) {
+          const res = await fetch(`/api/jobs/${jobId}`);
+          const data = await res.json();
+          statusEl.innerHTML = `<p><strong>Status:</strong> ${data.status}</p>`;
+
+          if (data.results?.length) {
+            resultsEl.innerHTML = data.results.map((item) => {
+              const cls = item.status === "success" ? "success" : "error";
+              const msg = item.status === "success"
+                ? `${item.url} → ${item.filename}`
+                : `${item.url} → ${item.error}`;
+              return `<div class="result-row ${cls}">${msg}</div>`;
+            }).join("");
+          }
+
+          if (data.status === "completed") {
+            const label = data.download_type === "pdf" ? "Download PDF" : "Download ZIP";
+            statusEl.innerHTML += `<p><a href="${data.download_path}">${label}</a></p>`;
+            return;
+          }
+          if (data.status === "failed") {
+            statusEl.innerHTML += `<p class="error">${data.error || "Job failed."}</p>`;
+            return;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+      }
+
+      submitBtn.addEventListener("click", async () => {
+        const urlText = urlsEl.value || "";
+        statusEl.textContent = "Submitting job...";
+        resultsEl.textContent = "";
+
+        const res = await fetch("/api/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ urls: [], url_text: urlText })
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          statusEl.innerHTML = `<p class="error">${err.detail || "Request failed."}</p>`;
+          return;
+        }
+
+        const data = await res.json();
+        await pollJob(data.job_id);
+      });
+    </script>
+  </body>
+  </html>
