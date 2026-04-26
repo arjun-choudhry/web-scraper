@@ -57,6 +57,7 @@
         line-height: 1.5;
         user-select: none;
         flex-shrink: 0;
+        overflow: hidden;
       }
       textarea {
         flex: 1;
@@ -72,6 +73,7 @@
         white-space: pre;
         overflow-wrap: normal;
         overflow-x: auto;
+        margin-left: -2px; /* Compensate for line numbers border */
       }
       textarea:focus {
         outline: none;
